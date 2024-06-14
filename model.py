@@ -36,7 +36,7 @@ class GNN(torch.nn.Module):
         # Other layers
         for i in range(self.n_layers):
             self.conv_layers.append(TransformerConv(embedding_size, 
-                                                    embedding_size, 
+                                                    embedding_size, #output size but per head so final result will be embedding_size*n_heads shaped
                                                     heads=n_heads, 
                                                     dropout=dropout_rate,
                                                     edge_dim=edge_dim,
@@ -45,7 +45,7 @@ class GNN(torch.nn.Module):
             self.transf_layers.append(Linear(embedding_size*n_heads, embedding_size))
             self.bn_layers.append(BatchNorm1d(embedding_size))
             if i % self.top_k_every_n == 0:
-                self.pooling_layers.append(TopKPooling(embedding_size, ratio=top_k_ratio))
+                self.pooling_layers.append(TopKPooling(embedding_size, ratio=top_k_ratio)) # TopKPooling layer drops nodes based on their importance, keeping top_k_ratio of them
             
 
         # Linear layers
@@ -53,7 +53,7 @@ class GNN(torch.nn.Module):
         self.linear2 = Linear(dense_neurons, int(dense_neurons/2))  
         self.linear3 = Linear(int(dense_neurons/2), 1)  
 
-    def forward(self, x, edge_attr, edge_index, batch_index):
+    def forward(self, x, edge_attr, edge_index, batch_index): #edge index is the edge list, batch_index is the batch index for each node
         # Initial transformation
         x = self.conv1(x, edge_index, edge_attr)
         x = torch.relu(self.transf1(x))
@@ -67,14 +67,16 @@ class GNN(torch.nn.Module):
             x = torch.relu(self.transf_layers[i](x))
             x = self.bn_layers[i](x)
             # Always aggregate last layer
-            if i % self.top_k_every_n == 0 or i == self.n_layers:
-                x , edge_index, edge_attr, batch_index, _, _ = self.pooling_layers[int(i/self.top_k_every_n)](
-                    x, edge_index, edge_attr, batch_index
+            if i % self.top_k_every_n == 0 or i == self.n_layers: # Aggregate every top_k_every_n layers for pooling or the last layer for the final result
+                x , edge_index, edge_attr, batch_index, _, _ = self.pooling_layers[int(i/self.top_k_every_n)]( #since we append pooling layers only when i % top_k_every_n == 0, we can use i/top_k_every_n as index for the current pooling layer
+                    x, edge_index, edge_attr, batch_index # Pooling layers require edge_index and edge_attr in addition to x and batch_index
                     )
+                #x has shape [batch_size, embedding_size] after pooling
                 # Add current representation
-                global_representation.append(torch.cat([gmp(x, batch_index), gap(x, batch_index)], dim=1))
-    
-        x = sum(global_representation)
+                global_representation.append(torch.cat([gmp(x, batch_index), gap(x, batch_index)], dim=1)) # Concatenate global max and mean pooling results along the batches and append to global_representation list for later use
+                #gmp and gap are global max and mean pooling functions, they pool the node features globally and return a single vector for each graph in the batch
+                #so the shape of global_representation is [n_layers/top_k_every_n, 2*embedding_size]
+        x = sum(global_representation) # Sum all global representations along dimension 0 so now the shape is [2*embedding_size]
 
         # Output block
         x = torch.relu(self.linear1(x))

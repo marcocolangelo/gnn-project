@@ -28,13 +28,14 @@ def train_one_epoch(epoch, model, train_loader, optimizer, loss_fn):
     all_labels = []
     running_loss = 0.0
     step = 0
-    for _, batch in enumerate(tqdm(train_loader)):
+    for batch_index, batch in enumerate(tqdm(train_loader)):  #here train_loader is a DataLoader version specific for the graph data 
+        #batch is the data for the current batch in the DataLoader
         # Use GPU
         batch.to(device)  
         # Reset gradients
         optimizer.zero_grad() 
         # Passing the node features and the connection info
-        pred = model(batch.x.float(), 
+        pred = model(batch.x.float(),                       #recall the forward function from the GNN model
                                 batch.edge_attr.float(),
                                 batch.edge_index, 
                                 batch.batch) 
@@ -110,8 +111,9 @@ def calculate_metrics(y_pred, y_true, epoch, type):
         mlflow.log_metric(key=f"ROC-AUC-{type}", value=float(0), step=epoch)
         print(f"ROC AUC: notdefined")
 
-# %% Run the training
-from mango import scheduler, Tuner
+
+#%% Run the training
+from mango import Tuner
 from config import HYPERPARAMETERS, BEST_PARAMETERS, SIGNATURE
 
 def run_one_training(params):
@@ -123,18 +125,22 @@ def run_one_training(params):
 
         # Loading the dataset
         print("Loading dataset...")
-        train_dataset = MoleculeDataset(root="data/", filename="HIV_train_oversampled.csv")
+        train_dataset = MoleculeDataset(root="data/", filename="HIV_train_oversampled.csv") 
         test_dataset = MoleculeDataset(root="data/", filename="HIV_test.csv", test=True)
-        params["model_edge_dim"] = train_dataset[0].edge_attr.shape[1]
-
+        params["model_edge_dim"] = train_dataset[0].edge_attr.shape[1] #train_dataset[0] is the first molecule in the dataset
+        print(f"params: {params}")
         # Prepare training
-        train_loader = DataLoader(train_dataset, batch_size=params["batch_size"], shuffle=True)
+        train_loader = DataLoader(train_dataset, batch_size=params["batch_size"], shuffle=True) 
         test_loader = DataLoader(test_dataset, batch_size=params["batch_size"], shuffle=True)
+
+        #stampa grandezza dataset
+        print(f"Train dataset size: {len(train_dataset)}")
 
         # Loading the model
         print("Loading model...")
         model_params = {k: v for k, v in params.items() if k.startswith("model_")}
-        model = GNN(feature_size=train_dataset[0].x.shape[1], model_params=model_params) 
+        model = GNN(feature_size=train_dataset[0].x.shape[1], model_params=model_params)  #train_dataset[i].x.shape[1] is the number of features in the i-th molecule
+        print(f"Model parameters: {model_params}")
         model = model.to(device)
         print(f"Number of parameters: {count_parameters(model)}")
         mlflow.log_param("num_params", count_parameters(model))
@@ -188,7 +194,28 @@ config = dict()
 config["optimizer"] = "Bayesian"
 config["num_iteration"] = 100
 
-tuner = Tuner(HYPERPARAMETERS, 
-              objective=run_one_training,
-              conf_dict=config) 
-results = tuner.minimize()
+BEST_PARAMETERS = {
+    "batch_size": 128,
+    "learning_rate": 0.01,
+    "weight_decay": 0.0001,
+    "sgd_momentum": 0.8,
+    "scheduler_gamma": 0.8,
+    "pos_weight": 1.3,
+    "model_embedding_size": 64,
+    "model_attention_heads": 3,
+    "model_layers": 4,
+    "model_dropout_rate": 0.2,
+    "model_top_k_ratio": 0.5,
+    "model_top_k_every_n": 1,
+    "model_dense_neurons": 256
+}
+
+# Create config using BETS_PARAMETERS
+for key in BEST_PARAMETERS.keys():
+    config[key] = BEST_PARAMETERS[key]
+
+# Create a dummy model
+
+# Call the train_one_epoch function
+epoch = 0
+running_loss = run_one_training([config])

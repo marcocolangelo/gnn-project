@@ -30,7 +30,7 @@ class MoleculeDataset(Dataset):
         return self.filename
 
     @property
-    def processed_file_names(self):
+    def processed_file_names(self): #basically for caching 
         """ If these files are found in raw_dir, processing is skipped"""
         self.data = pd.read_csv(self.raw_paths[0]).reset_index()
 
@@ -43,15 +43,18 @@ class MoleculeDataset(Dataset):
     def download(self):
         pass
 
-    def process(self):
+    def process(self): 
+        """ This is the function that creates the dataset from raw data.
+            This is where featurization and processing is done.
+            A feauturization function is used from deepchem library."""
         self.data = pd.read_csv(self.raw_paths[0]).reset_index()
         featurizer = dc.feat.MolGraphConvFeaturizer(use_edges=True)
         for index, row in tqdm(self.data.iterrows(), total=self.data.shape[0]):
             # Featurize molecule
-            mol = Chem.MolFromSmiles(row["smiles"])
+            mol = Chem.MolFromSmiles(row["smiles"]) #here we should change to MolFromSDMolSupplier for sdf files  in our case
             f = featurizer._featurize(mol)
             data = f.to_pyg_graph()
-            data.y = self._get_label(row["HIV_active"])
+            data.y = self._get_label(row["HIV_active"]) #it should be changed to the column name in our case, so DL or something
             data.smiles = row["smiles"]
             if self.test:
                 torch.save(data, 
