@@ -157,7 +157,7 @@ def run_one_training(params):
         # Start training
         best_loss = 1000
         early_stopping_counter = 0
-        for epoch in range(300): 
+        for epoch in range(50): 
             if early_stopping_counter <= 10: # = x * 5 
                 # Training
                 model.train()
